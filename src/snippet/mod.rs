@@ -8,6 +8,7 @@ use schema::Field;
 use std::collections::BTreeSet;
 use tokenizer::BoxedTokenizer;
 use Document;
+use std::cmp::Ordering;
 
 const DEFAULT_MAX_NUM_CHARS: usize = 150;
 
@@ -31,6 +32,20 @@ pub struct FragmentCandidate {
     num_chars: usize,
     highlighted: Vec<HighlightSection>,
 }
+
+/*
+impl PartialOrd for FragmentCandidate {
+    fn partial_cmp(&self, other: &FragmentCandidate) -> Option<Ordering> {
+        let cmp_score = self.score.partial_cmp(&other.score).unwrap_or(Ordering::Equal);
+        if cmp_score == Ordering::Equal {
+            (self.start_offset, self.stop_offset)
+                .partial_cmp(&(other.start_offset, other.stop_offset))
+        } else {
+            Some(cmp_score)
+        }
+    }
+}
+*/
 
 impl FragmentCandidate {
     /// Create a basic `FragmentCandidate`
@@ -156,18 +171,17 @@ fn select_best_fragment_combination<'a>(
     fragments: Vec<FragmentCandidate>,
     text: &'a str,
 ) -> Snippet {
-    if let Some(init) = fragments.iter().nth(0) {
-        let fragment =
-            fragments.iter().skip(1).fold(
-                init,
-                |acc, item| {
-                    if item.score > acc.score {
-                        item
-                    } else {
-                        acc
-                    }
-                },
-            );
+    let best_fragment_opt = fragments
+        .iter()
+        .max_by(|left, right| {
+            let cmp_score = left.score.partial_cmp(&right.score).unwrap_or(Ordering::Equal);
+            if cmp_score == Ordering::Equal {
+                (left.start_offset, right.stop_offset).cmp(&(left.start_offset, right.stop_offset))
+            } else {
+                cmp_score
+            }
+        });
+    if let Some(fragment) = best_fragment_opt {
         let fragment_text = &text[fragment.start_offset..fragment.stop_offset];
         let highlighted = fragment
             .highlighted
